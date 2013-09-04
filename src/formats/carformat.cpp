@@ -105,10 +105,11 @@ namespace OpenBabel
                 ifs.getline(buffer,BUFF_SIZE); // DATE
                 ifs.getline(buffer,BUFF_SIZE); // PBC a b c alpha beta gamma SG
 
+                string str = buffer;
                 // parse cell parameters
-                tokenize(vs,buffer);
-                if (vs.size() == 8)
-                  {
+                tokenize(vs,str," \t\r\n", 7);
+                if (vs.size() >= 7)
+                {
                     //parse cell values
                     double A,B,C,Alpha,Beta,Gamma;
                     A = atof((char*)vs[1].c_str());
@@ -120,9 +121,18 @@ namespace OpenBabel
                     OBUnitCell *uc = new OBUnitCell;
                     uc->SetOrigin(fileformatInput);
                     uc->SetData(A, B, C, Alpha, Beta, Gamma);
-                    uc->SetSpaceGroup(vs[7]);
+                    if(vs.size() > 7)
+                    {
+                        string& spg = vs[7];
+                        if(spg[0] == '(')
+                        {
+                            spg.erase(0, 1);
+                            spg.erase(spg.size()-1);
+                        }
+                        uc->SetSpaceGroup(spg);
+                    }
                     mol.SetData(uc);
-                  }
+                }
               }
             else // PBC=OFF
               {
