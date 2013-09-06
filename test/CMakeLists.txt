@@ -13,6 +13,7 @@ set(tests
     builder
     canonconsistent
     canonstable
+    carspg
     cistrans
     graphsym
     implicitH

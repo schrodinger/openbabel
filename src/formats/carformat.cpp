@@ -109,7 +109,7 @@ namespace OpenBabel
                 // parse cell parameters
                 tokenize(vs,str," \t\r\n", 7);
                 if (vs.size() >= 7)
-                {
+                  {
                     //parse cell values
                     double A,B,C,Alpha,Beta,Gamma;
                     A = atof((char*)vs[1].c_str());
@@ -121,18 +121,25 @@ namespace OpenBabel
                     OBUnitCell *uc = new OBUnitCell;
                     uc->SetOrigin(fileformatInput);
                     uc->SetData(A, B, C, Alpha, Beta, Gamma);
-                    if(vs.size() > 7)
-                    {
+                    if(vs.size() > 7) 
+                      {
                         string& spg = vs[7];
+
+                        // Remove parentheses enclosing the space
+                        // group and remove white space from front
+                        // and back of string.
+                        Trim(spg);
                         if(spg[0] == '(')
-                        {
+                          {
                             spg.erase(0, 1);
-                            spg.erase(spg.size()-1);
-                        }
+                            spg.erase(spg.size()-1); 
+                          }
+                        Trim(spg);
+
                         uc->SetSpaceGroup(spg);
-                    }
+                      }
                     mol.SetData(uc);
-                }
+                  }
               }
             else // PBC=OFF
               {
