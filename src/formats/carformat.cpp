@@ -123,20 +123,20 @@ namespace OpenBabel
                     uc->SetData(A, B, C, Alpha, Beta, Gamma);
                     if(vs.size() > 7) 
                       {
-                        string& spg = vs[7];
+                        string& space_group = vs[7];
 
                         // Remove parentheses enclosing the space
                         // group and remove white space from front
                         // and back of string.
-                        Trim(spg);
-                        if(spg[0] == '(')
+                        Trim(space_group);
+                        if(space_group[0] == '(')
                           {
-                            spg.erase(0, 1);
-                            spg.erase(spg.size()-1); 
+                            space_group.erase(0, 1);
+                            space_group.erase(space_group.size()-1); 
                           }
-                        Trim(spg);
+                        Trim(space_group);
 
-                        uc->SetSpaceGroup(spg);
+                        uc->SetSpaceGroup(space_group);
                       }
                     mol.SetData(uc);
                   }

@@ -1,8 +1,8 @@
 /**********************************************************************
-carspgtest.cpp - Unit tests for to check if space group is being handled
+carspacegrouptest.cpp - Unit tests for to check if space group is being handled
 properly in .car format.
 
-Copyright (C) 2013-2014 Karthik Rajagopalan
+Copyright (C) 2013 by Karthik Rajagopalan
  
 This file is part of the Open Babel project.
 For more information, see <http://openbabel.org/>
