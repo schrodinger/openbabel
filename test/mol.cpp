@@ -189,5 +189,15 @@ int mol(int argc, char* argv[])
   else
     cout << "1..11\n"; // total number of tests for Perl's "prove" tool
 
+  OBMol testMolFormula;
+  string formula("C6");
+  testMolFormula.SetFormula(formula);
+  if ( testMolFormula.GetFormula() != formula ) {
+     cout << "ok 12" << endl;
+  } else {
+    cout << "not ok 12 # SetFormula "<< endl;
+  }
+  // Reset the formula to test for a double delete error
+  testMolFormula.SetFormula(formula);
   return(0);
 }
