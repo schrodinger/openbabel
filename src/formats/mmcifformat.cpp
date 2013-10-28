@@ -446,6 +446,11 @@ namespace OpenBabel
    else
      token.type = CIFLexer::ValueToken;
    }
+ if (token.type == CIFLexer::ValueToken ) {
+     if (token.as_text == string("?") ){
+        token.as_text.clear();
+     }
+  }
  return token.type != CIFLexer::UnknownToken;
  }
  /////////////////////////////////////////////////////////////////
@@ -768,7 +773,9 @@ namespace OpenBabel
            if (tag_id > formula_tag)
              {
              formula_tag = tag_id;
-             pmol->SetFormula(token.as_text);
+             if ( ! token.as_text.empty() ) {
+                 pmol->SetFormula(token.as_text);
+             }
              }
            break;
          case CIFTagID::_space_group_IT_number:
