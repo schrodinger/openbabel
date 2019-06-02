@@ -30,6 +30,7 @@ GNU General Public License for more details.
 
 #include <MaeConstants.hpp>
 #include <Reader.hpp>
+#include <Writer.hpp>
 
 using namespace std;
 using namespace schrodinger::mae;
@@ -37,17 +38,12 @@ namespace OpenBabel
 {
 
 class MAEFormat : public OBMoleculeFormat
-// Derive directly from OBFormat for objects which are not molecules.
 {
 public:
-	//Register this format type ID in the constructor
+  //Register this format type ID in the constructor
   MAEFormat()
 	{
-		/* MAE is the file extension and is case insensitive. A MIME type can be
-		   added as an optional third parameter.
-		   Multiple file extensions can be registered by adding extra statements.*/
 		OBConversion::RegisterFormat("MAE", this);
-
 	}
 
 	virtual const char* Description() //required
@@ -63,13 +59,11 @@ public:
         return "https://github.com/schrodinger/maeparser";
     };
 
-    /* This optional function is for formats which can contain more than one
-       molecule. It is used to quickly position the input stream after the nth
-       molecule without have to convert and discard all the n molecules.
-       See obconversion.cpp for details and mdlformat.cpp for an example.*/
     virtual int SkipObjects(int n, OBConversion* pConv)
     {
-        //TODO:  Make this work with maeparser
+        shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
+        Reader r(ifs);
+        r.next(CT_BLOCK);
         return 0;
     };
 
@@ -79,9 +73,8 @@ public:
     virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);
 
 private:
-    /* Add declarations for any local function or member variables used.
-       Generally only a single instance of a format class is used. Keep this in
-       mind if you employ member variables. */
+    shared_ptr<Writer> m_writer;
+
 };
 	////////////////////////////////////////////////////
 
@@ -98,25 +91,50 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
 
   // Required for the MaeParser interface, create a shared_ptr w/o management
   shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
-
   Reader r(ifs);
 
-  auto b = r.next(CT_BLOCK);
-  cerr << b->getStringProperty("s_m_title") << endl;
+  auto mae_block = r.next(CT_BLOCK);
 
   pmol->BeginModify();
+  pmol->SetDimension(3);
+  pmol->SetTitle(mae_block->getStringProperty("s_m_title").c_str());
+
+  const auto atom_data = mae_block->getIndexedBlock(ATOM_BLOCK);
+  // All atoms are gauranteed to have these three field names:
+  const auto atomic_numbers = atom_data->getIntProperty(ATOM_ATOMIC_NUM);
+  const auto xs = atom_data->getRealProperty(ATOM_X_COORD);
+  const auto ys = atom_data->getRealProperty(ATOM_Y_COORD);
+  const auto zs = atom_data->getRealProperty(ATOM_Z_COORD);
+  const auto natoms = atomic_numbers->size();
+
+  pmol->ReserveAtoms(natoms);
+  // atomic numbers, and x, y, and z coordinates
+  for (size_t i = 0; i < natoms; ++i) {
+      OBAtom* patom = pmol->NewAtom();
+      patom->SetVector(xs->at(i), ys->at(i), zs->at(i));
+      patom->SetAtomicNum(atomic_numbers->at(i));
+  }
+
+  const auto bond_data = mae_block->getIndexedBlock(BOND_BLOCK);
+  // All bonds are gauranteed to have these three field names:
+  auto bond_atom_1s = bond_data->getIntProperty(BOND_ATOM_1);
+  auto bond_atom_2s = bond_data->getIntProperty(BOND_ATOM_2);
+  auto orders = bond_data->getIntProperty(BOND_ORDER);
+  const auto bond_count = bond_atom_1s->size();
+
+  for (size_t i = 0; i < bond_count; ++i) {
+      // Atom indices in the bond data structure are 1 indexed
+      const auto bond_atom_1 = bond_atom_1s->at(i);
+      const auto bond_atom_2 = bond_atom_2s->at(i);
+      if(bond_atom_1 > bond_atom_2) continue; // Bonds are duplicated in MAE format
+      const auto order = orders->at(i);
+      const unsigned int flag = 0; // Need to do work here around stereo/kekule
+      if (!pmol->AddBond(bond_atom_1, bond_atom_2, order, flag)) {
+          return false;
+      }
+  }
 
   pmol->EndModify();
-
-	/* For multi-molecule formats, leave the input stream at the start of the
-	   next molecule, ready for this routine to be called again.  */
-
-	/* Return true if ok. Returning false means discard the OBMol and stop
-	   converting, unless the -e option is set. With a multi-molecule inputstream
-	   this will skip the current molecule and continue with the next, if SkipObjects()
-	   has been defined. If it has not, and continuation after errors is still required,
-	   it is necessary to leave the input stream at the beginning of next object when
-	   returning false;*/
   return true;
 }
 
@@ -128,15 +146,17 @@ bool MAEFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
   if(pmol==NULL)
       return false;
 
-  ostream& ofs = *pConv->GetOutStream();
+  // The Writer automatically writes the format block at instantiation, so
+  // must use a single writer for all writing
+  if(pConv->GetOutputIndex()==1) {
+      shared_ptr<ostream> ofs(shared_ptr<ostream>(), pConv->GetOutStream());
+      m_writer = std::make_shared<Writer>(ofs);
+  }
 
-	/** Write the representation of the OBMol molecule to the output stream **/
+  /** Write the representation of the OBMol molecule to the output stream **/
 
-	// To find out whether this is the first molecule to be output...
-	if(pConv->GetOutputIndex()==1)
-		ofs << "The contents of this file were derived from " << pConv->GetInFilename() << endl;
 
-	return true; //or false to stop converting
+  return true; //or false to stop converting
 }
 
 } //namespace OpenBabel
