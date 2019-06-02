@@ -26,7 +26,13 @@ GNU General Public License for more details.
 #include <openbabel/elements.h>
 #include <openbabel/generic.h>
 
+#include <iostream>
+
+#include <MaeConstants.hpp>
+#include <Reader.hpp>
+
 using namespace std;
+using namespace schrodinger::mae;
 namespace OpenBabel
 {
 
@@ -90,7 +96,13 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
   if(pmol==NULL)
       return false;
 
-  istream& ifs = *pConv->GetInStream();
+  // Required for the MaeParser interface, create a shared_ptr w/o management
+  shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
+
+  Reader r(ifs);
+
+  auto b = r.next(CT_BLOCK);
+  cerr << b->getStringProperty("s_m_title") << endl;
 
   pmol->BeginModify();
 
