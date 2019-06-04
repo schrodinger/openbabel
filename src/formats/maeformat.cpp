@@ -62,20 +62,7 @@ public:
         return "https://github.com/schrodinger/maeparser";
     };
 
-    virtual int SkipObjects(int n, OBConversion* pConv)
-    {
-        // Required for the MaeParser interface, create a shared_ptr w/o
-        // memory management
-        setupReader(pConv);
-        for(int i=0; i<n; i++) {
-            m_next_mae = m_reader->next(CT_BLOCK);
-            checkEOF(pConv);
-            if(m_next_mae==nullptr) {
-                return 0;
-            }
-        }
-        return 0;
-    };
+    virtual int SkipObjects(int n, OBConversion* pConv);
 
     ////////////////////////////////////////////////////
     /// Declarations for the "API" interface functions. Definitions are below
@@ -86,14 +73,7 @@ private:
     // TODO:  This will be implemented in maeparser more completely,
     // we should migrate to that when available.
     const map<int, int> atomic_num_to_color = {
-        {1, 21},
-        {6, 2},
-        {7, 43},
-        {8, 70},
-        {9, 8},
-        {16, 13},
-        {17, 9}
-    };
+        {1, 21}, {6, 2}, {7, 43}, {8, 70}, {9, 8}, {16, 13}, {17, 9} };
 
     shared_ptr<Block> m_next_mae;
     shared_ptr<Reader> m_reader;
@@ -102,41 +82,8 @@ private:
     shared_ptr<IndexedBlock> TranslateAtomBlock(OBMol* pmol);
     shared_ptr<IndexedBlock> TranslateBondBlock(OBMol* pmol);
 
-    void setupReader(OBConversion* pConv)
-    {
-        static string filename = "";
-        if(filename == pConv->GetInFilename()) return;
-        filename = pConv->GetInFilename();
-
-        // Required for the MaeParser interface, create a shared_ptr w/o
-        // memory management
-        shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
-        m_reader = make_shared<Reader>(ifs);
-
-        m_next_mae = m_reader->next(CT_BLOCK);
-    }
-
-    /* Guilt disclaimer:  This is an ugly hack, but I think required.
-     *
-     * Since maeparser buffers what it reads, we have to do some cheating
-     * around the input stream in order to keep obconversion reading even when
-     * the file pointer has reached the end of the file.
-     */
-    void checkEOF(OBConversion* pConv)
-    {
-        if(m_next_mae == nullptr) {
-            // At the end of the data, set the stream there so obconversion
-            // stops iterating
-            pConv->GetInStream()->setf(ios::eofbit);
-        } else if(pConv->GetInStream()->eof()) {
-            // maeparser is done reading/buffering, but has data left to
-            // process, so move the input stream away from the end and reset
-            // its flags
-            pConv->GetInStream()->putback(1);
-            pConv->GetInStream()->clear();
-        }
-        return;
-    }
+    void setupReader(OBConversion* pConv);
+    void checkEOF(OBConversion* pConv);
 
 };
 	////////////////////////////////////////////////////
@@ -145,6 +92,60 @@ private:
 MAEFormat theMAEFormat;
 
 /////////////////////////////////////////////////////////////////
+
+int MAEFormat::SkipObjects(int n, OBConversion* pConv)
+{
+    // Required for the MaeParser interface, create a shared_ptr w/o
+    // memory management
+    setupReader(pConv);
+    for(int i=0; i<n; i++) {
+        m_next_mae = m_reader->next(CT_BLOCK);
+        checkEOF(pConv);
+        if(m_next_mae==nullptr) {
+            return 0;
+        }
+    }
+    return 0;
+};
+
+
+void MAEFormat::setupReader(OBConversion* pConv)
+{
+    static string filename = "";
+    if(filename == pConv->GetInFilename()) return;
+    filename = pConv->GetInFilename();
+
+    // Required for the MaeParser interface, create a shared_ptr w/o
+    // memory management
+    shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
+    m_reader = make_shared<Reader>(ifs);
+
+    m_next_mae = m_reader->next(CT_BLOCK);
+}
+
+
+/* Guilt disclaimer:  This is an ugly hack, but I think required.
+ *
+ * Since maeparser buffers what it reads, we have to do some cheating
+ * around the input stream in order to keep obconversion reading even when
+ * the file pointer has reached the end of the file.
+ */
+void MAEFormat::checkEOF(OBConversion* pConv)
+{
+    if(m_next_mae == nullptr) {
+        // At the end of the data, set the stream there so obconversion
+        // stops iterating
+        pConv->GetInStream()->setf(ios::eofbit);
+    } else if(pConv->GetInStream()->eof()) {
+        // maeparser is done reading/buffering, but has data left to
+        // process, so move the input stream away from the end and reset
+        // its flags
+        pConv->GetInStream()->putback(1);
+        pConv->GetInStream()->clear();
+    }
+    return;
+}
+
 
 bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
 {
