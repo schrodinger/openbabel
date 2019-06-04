@@ -104,9 +104,9 @@ private:
 
     void setupReader(OBConversion* pConv)
     {
-        static bool initialized = false;
-        if(initialized) return;
-        initialized = true;
+        static string filename = "";
+        if(filename == pConv->GetInFilename()) return;
+        filename = pConv->GetInFilename();
 
         // Required for the MaeParser interface, create a shared_ptr w/o
         // memory management
