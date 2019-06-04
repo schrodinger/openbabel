@@ -202,27 +202,17 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
     return true;
 }
 
-// Add an integer property to a block where all values are enabled
-template <class T>
-shared_ptr<IndexedProperty<T> > createProp(vector<T>& values)
-{
-    const auto count = values.size();
-    auto skip = new dynamic_bitset<>(count);
-    auto prop = make_shared<IndexedProperty<T> >(values, skip);
-    return prop;
-}
-
 static void addIntProp(string name, vector<int> values,
         shared_ptr<IndexedBlock>& block)
 {
-    auto prop = createProp(values);
+    auto prop = make_shared<IndexedProperty<int> >(values);
     block->setIntProperty(name, prop);
 }
 
 static void addRealProp(string name, vector<double> values,
         shared_ptr<IndexedBlock>& block)
 {
-    auto prop = createProp(values);
+    auto prop = make_shared<IndexedProperty<double> >(values);
     block->setRealProperty(name, prop);
 }
 
