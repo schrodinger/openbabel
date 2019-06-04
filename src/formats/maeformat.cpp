@@ -27,6 +27,7 @@ GNU General Public License for more details.
 #include <openbabel/generic.h>
 
 #include <iostream>
+#include <map>
 
 #include <MaeConstants.hpp>
 #include <Reader.hpp>
@@ -34,6 +35,7 @@ GNU General Public License for more details.
 
 using namespace std;
 using namespace schrodinger::mae;
+using boost::dynamic_bitset;
 namespace OpenBabel
 {
 
@@ -44,6 +46,7 @@ public:
   MAEFormat()
 	{
 		OBConversion::RegisterFormat("MAE", this);
+		OBConversion::RegisterFormat("MAEGZ", this);
 	}
 
 	virtual const char* Description() //required
@@ -61,9 +64,16 @@ public:
 
     virtual int SkipObjects(int n, OBConversion* pConv)
     {
-        shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
-        Reader r(ifs);
-        r.next(CT_BLOCK);
+        // Required for the MaeParser interface, create a shared_ptr w/o
+        // memory management
+        setupReader(pConv);
+        for(int i=0; i<n; i++) {
+            m_next_mae = m_reader->next(CT_BLOCK);
+            checkEOF(pConv);
+            if(m_next_mae==nullptr) {
+                return 0;
+            }
+        }
         return 0;
     };
 
@@ -73,7 +83,60 @@ public:
     virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);
 
 private:
+    // TODO:  This will be implemented in maeparser more completely,
+    // we should migrate to that when available.
+    const map<int, int> atomic_num_to_color = {
+        {1, 21},
+        {6, 2},
+        {7, 43},
+        {8, 70},
+        {9, 8},
+        {16, 13},
+        {17, 9}
+    };
+
+    shared_ptr<Block> m_next_mae;
+    shared_ptr<Reader> m_reader;
     shared_ptr<Writer> m_writer;
+
+    shared_ptr<IndexedBlock> TranslateAtomBlock(OBMol* pmol);
+    shared_ptr<IndexedBlock> TranslateBondBlock(OBMol* pmol);
+
+    void setupReader(OBConversion* pConv)
+    {
+        static bool initialized = false;
+        if(initialized) return;
+        initialized = true;
+
+        // Required for the MaeParser interface, create a shared_ptr w/o
+        // memory management
+        shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
+        m_reader = make_shared<Reader>(ifs);
+
+        m_next_mae = m_reader->next(CT_BLOCK);
+    }
+
+    /* Guilt disclaimer:  This is an ugly hack, but I think required.
+     *
+     * Since maeparser buffers what it reads, we have to do some cheating
+     * around the input stream in order to keep obconversion reading even when
+     * the file pointer has reached the end of the file.
+     */
+    void checkEOF(OBConversion* pConv)
+    {
+        if(m_next_mae == nullptr) {
+            // At the end of the data, set the stream there so obconversion
+            // stops iterating
+            pConv->GetInStream()->setf(ios::eofbit);
+        } else if(pConv->GetInStream()->eof()) {
+            // maeparser is done reading/buffering, but has data left to
+            // process, so move the input stream away from the end and reset
+            // its flags
+            pConv->GetInStream()->putback(1);
+            pConv->GetInStream()->clear();
+        }
+        return;
+    }
 
 };
 	////////////////////////////////////////////////////
@@ -85,78 +148,193 @@ MAEFormat theMAEFormat;
 
 bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
 {
-  OBMol* pmol = pOb->CastAndClear<OBMol>();
-  if(pmol==NULL)
-      return false;
+    OBMol* pmol = pOb->CastAndClear<OBMol>();
+    if(pmol==NULL)
+        return false;
 
-  // Required for the MaeParser interface, create a shared_ptr w/o management
-  shared_ptr<istream> ifs(shared_ptr<istream>(), pConv->GetInStream());
-  Reader r(ifs);
+    setupReader(pConv);
 
-  auto mae_block = r.next(CT_BLOCK);
+    pmol->BeginModify();
+    pmol->SetDimension(3);
+    pmol->SetTitle(m_next_mae->getStringProperty("s_m_title").c_str());
 
-  pmol->BeginModify();
-  pmol->SetDimension(3);
-  pmol->SetTitle(mae_block->getStringProperty("s_m_title").c_str());
+    const auto atom_data = m_next_mae->getIndexedBlock(ATOM_BLOCK);
+    // All atoms are gauranteed to have these three field names:
+    const auto atomic_numbers = atom_data->getIntProperty(ATOM_ATOMIC_NUM);
+    const auto xs = atom_data->getRealProperty(ATOM_X_COORD);
+    const auto ys = atom_data->getRealProperty(ATOM_Y_COORD);
+    const auto zs = atom_data->getRealProperty(ATOM_Z_COORD);
+    const auto natoms = atomic_numbers->size();
 
-  const auto atom_data = mae_block->getIndexedBlock(ATOM_BLOCK);
-  // All atoms are gauranteed to have these three field names:
-  const auto atomic_numbers = atom_data->getIntProperty(ATOM_ATOMIC_NUM);
-  const auto xs = atom_data->getRealProperty(ATOM_X_COORD);
-  const auto ys = atom_data->getRealProperty(ATOM_Y_COORD);
-  const auto zs = atom_data->getRealProperty(ATOM_Z_COORD);
-  const auto natoms = atomic_numbers->size();
+    pmol->ReserveAtoms(natoms);
+    // atomic numbers, and x, y, and z coordinates
+    for (size_t i = 0; i < natoms; ++i) {
+        OBAtom* patom = pmol->NewAtom();
+        patom->SetVector(xs->at(i), ys->at(i), zs->at(i));
+        patom->SetAtomicNum(atomic_numbers->at(i));
+    }
 
-  pmol->ReserveAtoms(natoms);
-  // atomic numbers, and x, y, and z coordinates
-  for (size_t i = 0; i < natoms; ++i) {
-      OBAtom* patom = pmol->NewAtom();
-      patom->SetVector(xs->at(i), ys->at(i), zs->at(i));
-      patom->SetAtomicNum(atomic_numbers->at(i));
-  }
+    const auto bond_data = m_next_mae->getIndexedBlock(BOND_BLOCK);
+    // All bonds are gauranteed to have these three field names:
+    auto bond_atom_1s = bond_data->getIntProperty(BOND_ATOM_1);
+    auto bond_atom_2s = bond_data->getIntProperty(BOND_ATOM_2);
+    auto orders = bond_data->getIntProperty(BOND_ORDER);
+    const auto bond_count = bond_atom_1s->size();
 
-  const auto bond_data = mae_block->getIndexedBlock(BOND_BLOCK);
-  // All bonds are gauranteed to have these three field names:
-  auto bond_atom_1s = bond_data->getIntProperty(BOND_ATOM_1);
-  auto bond_atom_2s = bond_data->getIntProperty(BOND_ATOM_2);
-  auto orders = bond_data->getIntProperty(BOND_ORDER);
-  const auto bond_count = bond_atom_1s->size();
+    for (size_t i = 0; i < bond_count; ++i) {
+        // Atom indices in the bond data structure are 1 indexed
+        const auto bond_atom_1 = bond_atom_1s->at(i);
+        const auto bond_atom_2 = bond_atom_2s->at(i);
+        if(bond_atom_1 > bond_atom_2) continue; // Bonds are duplicated in MAE format
+        const auto order = orders->at(i);
+        const unsigned int flag = 0; // Need to do work here around stereo/kekule
+        if (!pmol->AddBond(bond_atom_1, bond_atom_2, order, flag)) {
+            return false;
+        }
+    }
 
-  for (size_t i = 0; i < bond_count; ++i) {
-      // Atom indices in the bond data structure are 1 indexed
-      const auto bond_atom_1 = bond_atom_1s->at(i);
-      const auto bond_atom_2 = bond_atom_2s->at(i);
-      if(bond_atom_1 > bond_atom_2) continue; // Bonds are duplicated in MAE format
-      const auto order = orders->at(i);
-      const unsigned int flag = 0; // Need to do work here around stereo/kekule
-      if (!pmol->AddBond(bond_atom_1, bond_atom_2, order, flag)) {
-          return false;
-      }
-  }
+    pmol->EndModify();
 
-  pmol->EndModify();
-  return true;
+    m_next_mae = m_reader->next(CT_BLOCK);
+    checkEOF(pConv);
+
+    return true;
 }
 
+// Add an integer property to a block where all values are enabled
+template <class T>
+shared_ptr<IndexedProperty<T> > createProp(vector<T>& values)
+{
+    const auto count = values.size();
+    auto skip = new dynamic_bitset<>(count);
+    auto prop = make_shared<IndexedProperty<T> >(values, skip);
+    return prop;
+}
+
+static void addIntProp(string name, vector<int> values,
+        shared_ptr<IndexedBlock>& block)
+{
+    auto prop = createProp(values);
+    block->setIntProperty(name, prop);
+}
+
+static void addRealProp(string name, vector<double> values,
+        shared_ptr<IndexedBlock>& block)
+{
+    auto prop = createProp(values);
+    block->setRealProperty(name, prop);
+}
+
+
 ////////////////////////////////////////////////////////////////
+shared_ptr<IndexedBlock> MAEFormat::TranslateAtomBlock(OBMol* pmol)
+{
+    auto atom_block = make_shared<IndexedBlock>("m_atom");
+
+    const auto num_atoms = pmol->NumAtoms();
+    // Set up a real property
+    vector<double> x, y, z;
+    x.resize(num_atoms);
+    y.resize(num_atoms);
+    z.resize(num_atoms);
+
+    vector<int> atomic_num, formal_charge, mmod_type, color;
+    atomic_num.resize(num_atoms);
+    formal_charge.resize(num_atoms);
+    mmod_type.resize(num_atoms);
+    color.resize(num_atoms);
+
+    for (unsigned int i=0; i<num_atoms; i++) {
+        const auto atom = pmol->GetAtom(i+1); // 1-based index
+        x[i] = atom->x();
+        y[i] = atom->y();
+        z[i] = atom->z();
+
+        atomic_num[i] = atom->GetAtomicNum();
+        formal_charge[i] = atom->GetFormalCharge();
+        mmod_type[i] = 62;
+        try {
+            color[i] = atomic_num_to_color.at(atomic_num[i]);
+        } catch(out_of_range &e) {
+            color[i] = 2;
+        }
+    }
+
+    addRealProp("r_m_x_coord", x, atom_block);
+    addRealProp("r_m_y_coord", y, atom_block);
+    addRealProp("r_m_z_coord", z, atom_block);
+
+    addIntProp("i_m_atomic_number", atomic_num, atom_block);
+    addIntProp("i_m_formal_charge", formal_charge, atom_block);
+    addIntProp("i_m_mmod_type", mmod_type, atom_block);
+    addIntProp("i_m_color", color, atom_block);
+
+    return atom_block;
+}
+
+shared_ptr<IndexedBlock> MAEFormat::TranslateBondBlock(OBMol* pmol)
+{
+    auto bond_block = make_shared<IndexedBlock>("m_bond");
+
+    vector<int> from, to, order, from_rep, to_rep;
+
+    OBAtom *nbr;
+    OBBond *bond;
+    vector<OBBond*>::iterator j;
+    int bondline = 0;
+    vector<int> zbos;
+
+    const auto num_atoms = pmol->NumAtoms();
+    for (unsigned int i=0; i<num_atoms; i++) {
+        const auto atom = pmol->GetAtom(i+1); // 1-based index
+        for (nbr = atom->BeginNbrAtom(j); nbr; nbr = atom->NextNbrAtom(j)) {
+            bond = (OBBond*) *j;
+            from.push_back(atom->GetIdx());
+            to.push_back(nbr->GetIdx());
+            order.push_back(bond->GetBondOrder());
+            from_rep.push_back(1);
+            to_rep.push_back(1);
+        }
+    }
+    addIntProp("i_m_from", from, bond_block);
+    addIntProp("i_m_to", to, bond_block);
+    addIntProp("i_m_order", order, bond_block);
+    addIntProp("i_m_from_rep", from_rep, bond_block);
+    addIntProp("i_m_to_rep", to_rep, bond_block);
+
+    return bond_block;
+}
 
 bool MAEFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
 {
-  OBMol* pmol = dynamic_cast<OBMol*>(pOb);
-  if(pmol==NULL)
-      return false;
+    OBMol* pmol = dynamic_cast<OBMol*>(pOb);
+    if(pmol==NULL)
+        return false;
 
-  // The Writer automatically writes the format block at instantiation, so
-  // must use a single writer for all writing
-  if(pConv->GetOutputIndex()==1) {
-      shared_ptr<ostream> ofs(shared_ptr<ostream>(), pConv->GetOutStream());
-      m_writer = std::make_shared<Writer>(ofs);
-  }
+    // The Writer automatically writes the format block at instantiation, so
+    // must use a single writer for all writing
+    if(pConv->GetOutputIndex()==1) {
+        // Required for the MaeParser interface, create a shared_ptr w/o
+        // memory management
+        shared_ptr<ostream> ofs(shared_ptr<ostream>(), pConv->GetOutStream());
+        m_writer = make_shared<Writer>(ofs);
+    }
 
-  /** Write the representation of the OBMol molecule to the output stream **/
+    /** Write the representation of the OBMol molecule to the output stream **/
+    auto mae_block = make_shared<Block>(CT_BLOCK);
+    mae_block->setStringProperty("s_m_title", pmol->GetTitle());
 
+    auto atom_block = TranslateAtomBlock(pmol);
+    auto bond_block = TranslateBondBlock(pmol);
 
-  return true; //or false to stop converting
+    auto ibm = make_shared<IndexedBlockMap>();
+    ibm->addIndexedBlock(atom_block->getName(), atom_block);
+    ibm->addIndexedBlock(bond_block->getName(), bond_block);
+    mae_block->setIndexedBlockMap(ibm);
+
+    m_writer->write(mae_block);
+
+    return true; //or false to stop converting
 }
 
 } //namespace OpenBabel
