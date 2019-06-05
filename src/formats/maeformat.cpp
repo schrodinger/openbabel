@@ -304,7 +304,8 @@ bool MAEFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
 
     // The Writer automatically writes the format block at instantiation, so
     // must use a single writer for all writing
-    if(pConv->GetOutputIndex()==1) {
+    cerr << "FILENO: " << pConv->GetOutputIndex();
+    if(pConv->GetOutputIndex()<=1) {
         // Required for the MaeParser interface, create a shared_ptr w/o
         // memory management
         shared_ptr<ostream> ofs(shared_ptr<ostream>(), pConv->GetOutStream());
