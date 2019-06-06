@@ -62,10 +62,15 @@ void testMaeReader()
 void testMaeWriter()
 {
   OBConversion conv;
+
   OBMol mol;
+  conv.SetInFormat("mae");
+  conv.SetOutFormat("mae");
+  conv.ReadFile(&mol, GetFilename("maereader.mae"));
+  string mae_file_txt = conv.WriteString(&mol);
+
   conv.SetInFormat("sdf");
   conv.ReadFile(&mol, GetFilename("gaff.sdf"));
-  conv.SetOutFormat("mae");
   string mae_txt = conv.WriteString(&mol);
 
   OBMol mae_mol;
@@ -73,6 +78,11 @@ void testMaeWriter()
   conv.ReadString(&mae_mol, mae_txt);
 
   OB_COMPARE(mae_mol.NumAtoms(), 39);
+
+  // Verify that reading from sequential strings works
+  conv.ReadString(&mae_mol, mae_file_txt);
+  OB_COMPARE(mae_mol.NumAtoms(), 9);
+
 
 }
 

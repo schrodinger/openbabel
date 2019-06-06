@@ -49,7 +49,7 @@ public:
 		OBConversion::RegisterFormat("MAEGZ", this);
 	}
 
-	virtual const char* Description() //required
+	virtual const char* Description() override //required
 	{
 		return
 		"Maestro format\n"
@@ -57,17 +57,17 @@ public:
     };
 
     //URL where the file format is specified
-    virtual const char* SpecificationURL()
+    virtual const char* SpecificationURL() override
     {
         return "https://github.com/schrodinger/maeparser";
     };
 
-    virtual int SkipObjects(int n, OBConversion* pConv);
+    virtual int SkipObjects(int n, OBConversion* pConv) override;
 
     ////////////////////////////////////////////////////
     /// Declarations for the "API" interface functions. Definitions are below
-    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv);
-    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv);
+    virtual bool ReadMolecule(OBBase* pOb, OBConversion* pConv) override;
+    virtual bool WriteMolecule(OBBase* pOb, OBConversion* pConv) override;
 
 private:
     // TODO:  This will be implemented in maeparser more completely,
@@ -84,6 +84,10 @@ private:
 
     void setupReader(OBConversion* pConv);
     void checkEOF(OBConversion* pConv);
+
+    string m_in_filename = "";
+    int m_in_location = -1;
+
 
 };
 	////////////////////////////////////////////////////
@@ -111,9 +115,9 @@ int MAEFormat::SkipObjects(int n, OBConversion* pConv)
 
 void MAEFormat::setupReader(OBConversion* pConv)
 {
-    static string filename = "";
-    if(filename == pConv->GetInFilename()) return;
-    filename = pConv->GetInFilename();
+    if(m_in_filename == pConv->GetInFilename() && 
+            pConv->GetInStream()->tellg() == m_in_location) return;
+    m_in_filename = pConv->GetInFilename();
 
     // Required for the MaeParser interface, create a shared_ptr w/o
     // memory management
@@ -143,6 +147,10 @@ void MAEFormat::checkEOF(OBConversion* pConv)
         pConv->GetInStream()->putback(1);
         pConv->GetInStream()->clear();
     }
+
+    // Keep track of the last position we're at
+    m_in_location = pConv->GetInStream()->tellg();
+
     return;
 }
 
@@ -304,7 +312,6 @@ bool MAEFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
 
     // The Writer automatically writes the format block at instantiation, so
     // must use a single writer for all writing
-    cerr << "FILENO: " << pConv->GetOutputIndex();
     if(pConv->GetOutputIndex()<=1) {
         // Required for the MaeParser interface, create a shared_ptr w/o
         // memory management
