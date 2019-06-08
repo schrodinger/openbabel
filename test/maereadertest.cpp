@@ -28,12 +28,6 @@ GNU General Public License for more details.
 using namespace std;
 using namespace OpenBabel;
 
-std::string static GetFilename(const std::string &filename)
-{
-  string path = TESTDATADIR + filename;
-  return path;
-}
-
 void testMaeReader()
 {
   OBConversion conv;
@@ -41,11 +35,11 @@ void testMaeReader()
   conv.SetOutFormat("smi");
 
   conv.SetInFormat("mae");
-  conv.ReadFile(&mol, GetFilename("maereader.mae"));
+  conv.ReadFile(&mol, OBTestUtil::GetFilename("maereader.mae"));
   string mae_smi = conv.WriteString(&mol);
 
   conv.SetInFormat("maegz");
-  conv.ReadFile(&mol, GetFilename("maereader.maegz"));
+  conv.ReadFile(&mol, OBTestUtil::GetFilename("maereader.maegz"));
   string maegz_smi = conv.WriteString(&mol);
 
   OB_ASSERT(mae_smi == maegz_smi);
@@ -66,11 +60,11 @@ void testMaeWriter()
   OBMol mol;
   conv.SetInFormat("mae");
   conv.SetOutFormat("mae");
-  conv.ReadFile(&mol, GetFilename("maereader.mae"));
+  conv.ReadFile(&mol, OBTestUtil::GetFilename("maereader.mae"));
   string mae_file_txt = conv.WriteString(&mol);
 
   conv.SetInFormat("sdf");
-  conv.ReadFile(&mol, GetFilename("gaff.sdf"));
+  conv.ReadFile(&mol, OBTestUtil::GetFilename("gaff.sdf"));
   string mae_txt = conv.WriteString(&mol);
 
   OBMol mae_mol;

@@ -141,9 +141,9 @@ void MAEFormat::checkEOF(OBConversion* pConv)
         // stops iterating
         pConv->GetInStream()->setf(ios::eofbit);
     } else if(pConv->GetInStream()->eof()) {
-        // maeparser is done reading/buffering, but has data left to
-        // process, so move the input stream away from the end and reset
-        // its flags
+        // maeparser is done reading/buffering, but has data left to process
+        // (additional molecules in its buffer), so move the input stream away
+        // from the end and reset its flags
         pConv->GetInStream()->putback(1);
         pConv->GetInStream()->clear();
     }
