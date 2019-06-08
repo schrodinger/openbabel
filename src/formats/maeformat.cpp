@@ -165,11 +165,12 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
 
     pmol->BeginModify();
     pmol->SetDimension(3);
-    pmol->SetTitle(m_next_mae->getStringProperty("s_m_title").c_str());
+    pmol->SetTitle(m_next_mae->getStringProperty(CT_TITLE).c_str());
 
     const auto atom_data = m_next_mae->getIndexedBlock(ATOM_BLOCK);
     // All atoms are gauranteed to have these three field names:
     const auto atomic_numbers = atom_data->getIntProperty(ATOM_ATOMIC_NUM);
+    const auto formal_charges = atom_data->getIntProperty(ATOM_FORMAL_CHARGE);
     const auto xs = atom_data->getRealProperty(ATOM_X_COORD);
     const auto ys = atom_data->getRealProperty(ATOM_Y_COORD);
     const auto zs = atom_data->getRealProperty(ATOM_Z_COORD);
@@ -181,6 +182,7 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
         OBAtom* patom = pmol->NewAtom();
         patom->SetVector(xs->at(i), ys->at(i), zs->at(i));
         patom->SetAtomicNum(atomic_numbers->at(i));
+        patom->SetFormalCharge(formal_charges->at(i));
     }
 
     const auto bond_data = m_next_mae->getIndexedBlock(BOND_BLOCK);
@@ -194,7 +196,8 @@ bool MAEFormat::ReadMolecule(OBBase* pOb, OBConversion* pConv)
         // Atom indices in the bond data structure are 1 indexed
         const auto bond_atom_1 = bond_atom_1s->at(i);
         const auto bond_atom_2 = bond_atom_2s->at(i);
-        if(bond_atom_1 > bond_atom_2) continue; // Bonds are duplicated in MAE format
+        // Bonds may be duplicated in MAE format
+        if(bond_atom_1 > bond_atom_2) continue;
         const auto order = orders->at(i);
         const unsigned int flag = 0; // Need to do work here around stereo/kekule
         if (!pmol->AddBond(bond_atom_1, bond_atom_2, order, flag)) {
@@ -228,7 +231,7 @@ static void addRealProp(string name, vector<double> values,
 ////////////////////////////////////////////////////////////////
 shared_ptr<IndexedBlock> MAEFormat::TranslateAtomBlock(OBMol* pmol)
 {
-    auto atom_block = make_shared<IndexedBlock>("m_atom");
+    auto atom_block = make_shared<IndexedBlock>(ATOM_BLOCK);
 
     const auto num_atoms = pmol->NumAtoms();
     // Set up a real property
@@ -252,19 +255,22 @@ shared_ptr<IndexedBlock> MAEFormat::TranslateAtomBlock(OBMol* pmol)
         atomic_num[i] = atom->GetAtomicNum();
         formal_charge[i] = atom->GetFormalCharge();
         mmod_type[i] = 62;
-        try {
-            color[i] = atomic_num_to_color.at(atomic_num[i]);
-        } catch(out_of_range &e) {
+
+        auto pos = atomic_num_to_color.find(atomic_num[i]);
+        if (pos == atomic_num_to_color.end()) {
             color[i] = 2;
+        } else {
+            color[i] = pos->second;
         }
     }
 
-    addRealProp("r_m_x_coord", x, atom_block);
-    addRealProp("r_m_y_coord", y, atom_block);
-    addRealProp("r_m_z_coord", z, atom_block);
+    addRealProp(ATOM_X_COORD, x, atom_block);
+    addRealProp(ATOM_Y_COORD, y, atom_block);
+    addRealProp(ATOM_Z_COORD, z, atom_block);
 
-    addIntProp("i_m_atomic_number", atomic_num, atom_block);
-    addIntProp("i_m_formal_charge", formal_charge, atom_block);
+    addIntProp(ATOM_ATOMIC_NUM, atomic_num, atom_block);
+    addIntProp(ATOM_FORMAL_CHARGE, formal_charge, atom_block);
+    // Future versions of maeparaser will have const definitions for these
     addIntProp("i_m_mmod_type", mmod_type, atom_block);
     addIntProp("i_m_color", color, atom_block);
 
@@ -273,9 +279,9 @@ shared_ptr<IndexedBlock> MAEFormat::TranslateAtomBlock(OBMol* pmol)
 
 shared_ptr<IndexedBlock> MAEFormat::TranslateBondBlock(OBMol* pmol)
 {
-    auto bond_block = make_shared<IndexedBlock>("m_bond");
+    auto bond_block = make_shared<IndexedBlock>(BOND_BLOCK);
 
-    vector<int> from, to, order, from_rep, to_rep;
+    vector<int> from, to, order;
 
     OBAtom *nbr;
     OBBond *bond;
@@ -291,15 +297,11 @@ shared_ptr<IndexedBlock> MAEFormat::TranslateBondBlock(OBMol* pmol)
             from.push_back(atom->GetIdx());
             to.push_back(nbr->GetIdx());
             order.push_back(bond->GetBondOrder());
-            from_rep.push_back(1);
-            to_rep.push_back(1);
         }
     }
-    addIntProp("i_m_from", from, bond_block);
-    addIntProp("i_m_to", to, bond_block);
-    addIntProp("i_m_order", order, bond_block);
-    addIntProp("i_m_from_rep", from_rep, bond_block);
-    addIntProp("i_m_to_rep", to_rep, bond_block);
+    addIntProp(BOND_ATOM_1, from, bond_block);
+    addIntProp(BOND_ATOM_2, to, bond_block);
+    addIntProp(BOND_ORDER, order, bond_block);
 
     return bond_block;
 }
@@ -321,7 +323,7 @@ bool MAEFormat::WriteMolecule(OBBase* pOb, OBConversion* pConv)
 
     /** Write the representation of the OBMol molecule to the output stream **/
     auto mae_block = make_shared<Block>(CT_BLOCK);
-    mae_block->setStringProperty("s_m_title", pmol->GetTitle());
+    mae_block->setStringProperty(CT_TITLE, pmol->GetTitle());
 
     auto atom_block = TranslateAtomBlock(pmol);
     auto bond_block = TranslateBondBlock(pmol);

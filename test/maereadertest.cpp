@@ -48,7 +48,7 @@ void testMaeReader()
   mae_smi.erase(remove(mae_smi.begin(), mae_smi.end(), '\n'), mae_smi.end());
   mae_smi.erase(remove(mae_smi.begin(), mae_smi.end(), '\r'), mae_smi.end());
 
-  const string known_smi = "C([N](=O)[O])[N](=O)[O]\t2:Acids";
+  const string known_smi = "C([N+](=O)[O-])[N+](=O)[O-]\t2:Acids";
   OB_COMPARE(mae_smi, known_smi);
 }
 
